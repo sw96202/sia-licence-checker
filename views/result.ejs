@@ -3,10 +3,10 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Result</title>
+    <title>SIA License Result</title>
 </head>
 <body>
-    <h1>Extracted Information</h1>
+    <h1>SIA License Result</h1>
     <p><strong>Name:</strong> <%= name %></p>
     <p><strong>License Number:</strong> <%= licenseNumber %></p>
     <p><strong>Expiry Date:</strong> <%= expiryDate %></p>
@@ -17,6 +17,9 @@
             <span style="color: red;">Invalid <span>&#128078;</span></span>
         <% } %>
     </p>
-    <img src="<%= imageUrl %>" alt="Uploaded Image" style="max-width: 100%;">
+    <img src="<%= imageUrl %>" alt="Uploaded Image" style="width: 100%; max-width: 400px;">
+    <form action="/" method="GET">
+        <button type="submit">Upload Another Image</button>
+    </form>
 </body>
 </html>
