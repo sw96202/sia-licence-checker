@@ -3,9 +3,9 @@ const fileUpload = require('express-fileupload');
 const vision = require('@google-cloud/vision');
 const path = require('path');
 const axios = require('axios');
+const cheerio = require('cheerio');
 const sharp = require('sharp');
 const fs = require('fs');
-const cheerio = require('cheerio');
 
 require('dotenv').config();
 
@@ -27,6 +27,42 @@ const client = new vision.ImageAnnotatorClient({
 app.use(express.static('public'));
 app.use(fileUpload());
 app.set('view engine', 'ejs');
+
+// Function to scrape SIA license data
+async function scrapeSIALicenses(licenseNo) {
+  try {
+    const response = await axios.post('https://services.sia.homeoffice.gov.uk/PublicRegister/SearchPublicRegisterByLicence', {
+      licenseNo: licenseNo.replace(/\s/g, '') // Remove spaces
+    });
+
+    const $ = cheerio.load(response.data);
+
+    const firstName = $('.ax_paragraph').eq(0).next().find('.ax_h5').text().trim();
+    const surname = $('.ax_paragraph').eq(1).next().find('.ax_h5').text().trim();
+    const licenseNumber = $('.ax_paragraph').eq(2).next().find('.ax_h4').text().trim();
+    const role = $('.ax_paragraph').eq(3).next().find('.ax_h4').text().trim();
+    
+    const expiryDate = $('.ax_paragraph:contains("Expiry date")').next().find('.ax_h4').text().trim();
+    const status = $('.ax_paragraph:contains("Status")').next().find('.ax_h4_green').text().trim();
+
+    if (!firstName || !surname || !licenseNumber || !role || !expiryDate || !status) {
+      return { valid: false };
+    }
+
+    return {
+      valid: true,
+      firstName,
+      surname,
+      licenseNumber,
+      role,
+      expiryDate,
+      status
+    };
+  } catch (error) {
+    console.error('Error scraping SIA website:', error);
+    return { valid: false };
+  }
+}
 
 app.get('/', (req, res) => {
   res.render('upload');
@@ -64,34 +100,19 @@ app.post('/', async (req, res) => {
     expiryDate = expiryDateMatch[0];
   }
 
-  const nameMatch = extractedText.match(/\bH\. [A-Z]+\b/);
+  const nameMatch = extractedText.match(/(?:[A-Z]\.\s*)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/);
   if (nameMatch) {
     name = nameMatch[0];
   }
 
-  // Remove spaces from the license number for SIA check
-  const formattedLicenseNumber = licenseNumber.replace(/\s+/g, '');
+  const licenseInfo = await scrapeSIALicenses(licenseNumber);
 
-  // Scrape SIA website for license validation
-  let isValidLicence = false;
-  try {
-    const siaResponse = await checkSIALicense(formattedLicenseNumber);
-    if (siaResponse) {
-      isValidLicence = true;
-    }
-  } catch (error) {
-    console.error('Error checking SIA license:', error);
-  }
+  const isValidLicence = licenseInfo.valid;
 
-  // Add watermark to the image
   const watermarkedImagePath = path.join(__dirname, 'uploads', `watermarked_${image.name}`);
-  try {
-    await sharp(imagePath)
-      .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
-      .toFile(watermarkedImagePath);
-  } catch (err) {
-    return res.status(500).send('Error adding watermark to the image.');
-  }
+  await sharp(imagePath)
+    .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
+    .toFile(watermarkedImagePath);
 
   res.render('result', {
     licenseNumber,
@@ -101,15 +122,6 @@ app.post('/', async (req, res) => {
     imageUrl: `/uploads/watermarked_${image.name}`
   });
 });
-
-// Function to check SIA license validity
-async function checkSIALicense(licenseNumber) {
-  const response = await axios.get(`https://www.services.sia.homeoffice.gov.uk/Pages/licence-checker.aspx?licenceNumber=${licenseNumber}`);
-  const $ = cheerio.load(response.data);
-
-  const status = $('#content .status').text().trim();
-  return status === 'Active';
-}
 
 app.listen(port, () => {
   console.log(`Server started on port ${port}`);
