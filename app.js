@@ -1,32 +1,42 @@
 const express = require('express');
 const fileUpload = require('express-fileupload');
-const vision = require('@google-cloud/vision');
 const path = require('path');
 const axios = require('axios');
 const cheerio = require('cheerio');
-const sharp = require('sharp');
-const fs = require('fs');
-
+const { Storage } = require('@google-cloud/storage');
+const vision = require('@google-cloud/vision').v1;
+const Jimp = require('jimp');
 require('dotenv').config();
 
 const app = express();
-const port = process.env.PORT || 10000;
+const PORT = process.env.PORT || 3000;
 
-// Ensure uploads directory exists
-if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
-  fs.mkdirSync(path.join(__dirname, 'uploads'));
-}
+// Middleware
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+app.use(fileUpload());
+app.use(express.static('public'));
+app.set('view engine', 'ejs');
 
 // Google Cloud setup
-const serviceKey = path.join(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS);
+const serviceKey = path.join(__dirname, 'service-account-file.json');
+const client = new vision.ImageAnnotatorClient({ keyFilename: serviceKey });
+const storage = new Storage({ keyFilename: serviceKey });
 
-const client = new vision.ImageAnnotatorClient({
-  keyFilename: serviceKey,
-});
+// Extract text using Google Vision API
+async function extractTextWithGoogleVision(filePath) {
+    const [result] = await client.textDetection(filePath);
+    const detections = result.textAnnotations;
+    return detections[0] ? detections[0].description : '';
+}
 
-app.use(express.static('public'));
-app.use(fileUpload());
-app.set('view engine', 'ejs');
+// Add watermark to image
+async function addWatermark(filePath, watermarkText) {
+    const image = await Jimp.read(filePath);
+    const font = await Jimp.loadFont(Jimp.FONT_SANS_32_BLACK);
+    image.print(font, 10, 10, watermarkText);
+    await image.writeAsync(filePath);
+}
 
 // Function to scrape SIA license data
 async function scrapeSIALicenses(licenseNo) {
@@ -49,11 +59,9 @@ async function scrapeSIALicenses(licenseNo) {
             return { valid: false };
         }
 
-        const fullName = `${firstName} ${surname}`;
-
         return {
             valid: true,
-            fullName,
+            fullName: `${firstName} ${surname}`,
             licenseNumber,
             role,
             expiryDate,
@@ -65,80 +73,56 @@ async function scrapeSIALicenses(licenseNo) {
     }
 }
 
-    return {
-      valid: true,
-      firstName,
-      surname,
-      licenseNumber,
-      role,
-      expiryDate,
-      status
-    };
-  } catch (error) {
-    console.error('Error scraping SIA website:', error);
-    return { valid: false };
-  }
-}
-
+// Routes
 app.get('/', (req, res) => {
-  res.render('upload');
+    res.render('upload');
 });
 
-app.post('/', async (req, res) => {
-  if (!req.files || !req.files.image) {
-    return res.status(400).send('No files were uploaded.');
-  }
+app.post('/upload', async (req, res) => {
+    if (!req.files || !req.files.image) {
+        return res.status(400).send('No files were uploaded.');
+    }
 
-  const image = req.files.image;
-  const imagePath = path.join(__dirname, 'uploads', image.name);
+    const imageFile = req.files.image;
+    const filePath = path.join(__dirname, 'uploads', imageFile.name);
 
-  try {
-    await image.mv(imagePath);
-  } catch (err) {
-    return res.status(500).send('Error saving the file.');
-  }
+    // Use the mv() method to place the file on your server
+    await imageFile.mv(filePath);
 
-  const [result] = await client.textDetection(imagePath);
-  const detections = result.textAnnotations;
-  const extractedText = detections.length > 0 ? detections[0].description : '';
+    // Extract text using Google Vision API
+    const extractedText = await extractTextWithGoogleVision(filePath);
+    const licenseNumber = extractedText.match(/\d{16}/g)?.[0];
+    const expiryDate = extractedText.match(/(EXPIRES\s+\d{2}\s+\w+\s+\d{4})/i)?.[1];
+    
+    // Check the license validity and get the name from the SIA site
+    let siaResponse;
+    let name;
+    let isValidLicence;
 
-  let licenseNumber = 'Not Found';
-  let expiryDate = 'Not Found';
-  let name = 'Not Found';
+    if (licenseNumber) {
+        siaResponse = await scrapeSIALicenses(licenseNumber.replace(/\s+/g, ''));
+        isValidLicence = siaResponse.valid;
+        name = siaResponse.valid ? siaResponse.fullName : 'Not Found';
+    } else {
+        isValidLicence = false;
+        name = 'Not Found';
+    }
 
-  const licenseNumberMatch = extractedText.match(/\b\d{4} \d{4} \d{4} \d{4}\b/);
-  if (licenseNumberMatch) {
-    licenseNumber = licenseNumberMatch[0];
-  }
+    const watermarkText = 'Virtulum Checks';
 
-  const expiryDateMatch = extractedText.match(/\b\d{2} \b[A-Z]{3}\b \d{4}\b/);
-  if (expiryDateMatch) {
-    expiryDate = expiryDateMatch[0];
-  }
+    // Add watermark to the uploaded image
+    await addWatermark(filePath, watermarkText);
 
-  const nameMatch = extractedText.match(/(?:[A-Z]\.\s*)?[A-Z][a-z]+(?:\s+[A-Z][a-z]+)?/);
-  if (nameMatch) {
-    name = nameMatch[0];
-  }
-
-  const licenseInfo = await scrapeSIALicenses(licenseNumber);
-
-  const isValidLicence = licenseInfo.valid;
-
-  const watermarkedImagePath = path.join(__dirname, 'uploads', `watermarked_${image.name}`);
-  await sharp(imagePath)
-    .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
-    .toFile(watermarkedImagePath);
-
-  res.render('result', {
-    licenseNumber,
-    expiryDate,
-    name,
-    isValidLicence,
-    imageUrl: `/uploads/watermarked_${image.name}`
-  });
+    res.render('result', {
+        name,
+        licenseNumber: licenseNumber || 'Not Found',
+        expiryDate: expiryDate || 'Not Found',
+        isValidLicence,
+        imageUrl: `/uploads/${imageFile.name}`
+    });
 });
 
-app.listen(port, () => {
-  console.log(`Server started on port ${port}`);
+// Start the server
+app.listen(PORT, () => {
+    console.log(`Server is running on port ${PORT}`);
 });
