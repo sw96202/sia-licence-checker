@@ -30,24 +30,40 @@ app.set('view engine', 'ejs');
 
 // Function to scrape SIA license data
 async function scrapeSIALicenses(licenseNo) {
-  try {
-    const response = await axios.post('https://services.sia.homeoffice.gov.uk/PublicRegister/SearchPublicRegisterByLicence', {
-      licenseNo: licenseNo.replace(/\s/g, '') // Remove spaces
-    });
+    try {
+        const response = await axios.post('https://services.sia.homeoffice.gov.uk/PublicRegister/SearchPublicRegisterByLicence', {
+            licenseNo: licenseNo
+        });
 
-    const $ = cheerio.load(response.data);
+        const $ = cheerio.load(response.data);
 
-    const firstName = $('.ax_paragraph').eq(0).next().find('.ax_h5').text().trim();
-    const surname = $('.ax_paragraph').eq(1).next().find('.ax_h5').text().trim();
-    const licenseNumber = $('.ax_paragraph').eq(2).next().find('.ax_h4').text().trim();
-    const role = $('.ax_paragraph').eq(3).next().find('.ax_h4').text().trim();
-    
-    const expiryDate = $('.ax_paragraph:contains("Expiry date")').next().find('.ax_h4').text().trim();
-    const status = $('.ax_paragraph:contains("Status")').next().find('.ax_h4_green').text().trim();
+        const firstName = $('.ax_paragraph').eq(0).next().find('.ax_h5').text().trim();
+        const surname = $('.ax_paragraph').eq(1).next().find('.ax_h5').text().trim();
+        const licenseNumber = $('.ax_paragraph').eq(2).next().find('.ax_h4').text().trim();
+        const role = $('.ax_paragraph').eq(3).next().find('.ax_h4').text().trim();
+        
+        const expiryDate = $('.ax_paragraph:contains("Expiry date")').next().find('.ax_h4').text().trim();
+        const status = $('.ax_paragraph:contains("Status")').next().find('.ax_h4_green').text().trim();
 
-    if (!firstName || !surname || !licenseNumber || !role || !expiryDate || !status) {
-      return { valid: false };
+        if (!firstName || !surname || !licenseNumber || !role || !expiryDate || !status) {
+            return { valid: false };
+        }
+
+        const fullName = `${firstName} ${surname}`;
+
+        return {
+            valid: true,
+            fullName,
+            licenseNumber,
+            role,
+            expiryDate,
+            status
+        };
+    } catch (error) {
+        console.error('Error scraping SIA website:', error);
+        return { valid: false };
     }
+}
 
     return {
       valid: true,
