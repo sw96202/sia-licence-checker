@@ -1,81 +1,105 @@
 const express = require('express');
-const app = express();
-const axios = require('axios');
-const multer = require('multer');
-const { Storage } = require('@google-cloud/storage');
+const fileUpload = require('express-fileupload');
 const vision = require('@google-cloud/vision');
 const path = require('path');
-const ejs = require('ejs');
-const PORT = process.env.PORT || 3000;
+const axios = require('axios');
+const sharp = require('sharp');
+const { Storage } = require('@google-cloud/storage');
+const fs = require('fs');
+const cheerio = require('cheerio');
+
+require('dotenv').config();
+
+const app = express();
+const port = process.env.PORT || 10000;
 
 // Google Cloud setup
-const serviceKey = path.join(__dirname, 'excellent-zoo-319912-02dc266c5423.json');
-
-const storage = new Storage({
-  keyFilename: serviceKey,
-  projectId: 'excellent-zoo-319912',
-});
+const serviceKey = path.join(__dirname, 'service-account-file.json');
 
 const client = new vision.ImageAnnotatorClient({
   keyFilename: serviceKey,
 });
 
-// Middleware
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-app.use(express.urlencoded({ extended: true }));
+const storage = new Storage({
+  keyFilename: serviceKey,
+});
 
-// Multer setup for file upload
-const upload = multer({ dest: 'uploads/' });
+app.use(express.static('public'));
+app.use(fileUpload());
+app.set('view engine', 'ejs');
 
 app.get('/', (req, res) => {
   res.render('upload');
 });
 
-app.post('/upload', upload.single('image'), async (req, res) => {
-  const file = req.file;
-  if (!file) {
-    return res.status(400).send('No file uploaded.');
+app.post('/', async (req, res) => {
+  if (!req.files || !req.files.image) {
+    return res.status(400).send('No files were uploaded.');
   }
 
-  const filePath = path.join(__dirname, file.path);
+  const image = req.files.image;
+  const imagePath = path.join(__dirname, 'uploads', image.name);
 
+  await image.mv(imagePath);
+
+  const [result] = await client.textDetection(imagePath);
+  const detections = result.textAnnotations;
+  const extractedText = detections.length > 0 ? detections[0].description : '';
+
+  let licenseNumber = 'Not Found';
+  let expiryDate = 'Not Found';
+  let name = 'Not Found';
+
+  const licenseNumberMatch = extractedText.match(/\b\d{4} \d{4} \d{4} \d{4}\b/);
+  if (licenseNumberMatch) {
+    licenseNumber = licenseNumberMatch[0];
+  }
+
+  const expiryDateMatch = extractedText.match(/\b\d{2} \b[A-Z]{3}\b \d{4}\b/);
+  if (expiryDateMatch) {
+    expiryDate = expiryDateMatch[0];
+  }
+
+  const nameMatch = extractedText.match(/\bH\. [A-Z]+\b/);
+  if (nameMatch) {
+    name = nameMatch[0];
+  }
+
+  // Scrape SIA website for license validation
+  let isValidLicence = false;
   try {
-    const [result] = await client.textDetection(filePath);
-    const detections = result.textAnnotations;
-
-    const licenceNumber = detections[0].description.match(/\b\d{4} \d{4} \d{4} \d{4}\b/);
-    const expiryDate = detections[0].description.match(/\b\d{2} \w{3} \d{4}\b/);
-    const name = detections[0].description.match(/[A-Z]+\. [A-Z]+/);
-
-    const isValid = await checkSIALicence(licenceNumber);
-
-    res.render('result', {
-      licenceNumber: licenceNumber ? licenceNumber[0] : 'Not Found',
-      expiryDate: expiryDate ? expiryDate[0] : 'Not Found',
-      name: name ? name[0] : 'Not Found',
-      isValid,
-      imagePath: `uploads/${file.filename}`,
-    });
+    const siaResponse = await checkSIALicense(licenseNumber);
+    if (siaResponse) {
+      isValidLicence = true;
+    }
   } catch (error) {
-    console.error(error);
-    res.status(500).send('Error processing image.');
+    console.error('Error checking SIA license:', error);
   }
+
+  // Add watermark to the image
+  const watermarkedImagePath = path.join(__dirname, 'uploads', `watermarked_${image.name}`);
+  await sharp(imagePath)
+    .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
+    .toFile(watermarkedImagePath);
+
+  res.render('result', {
+    licenseNumber,
+    expiryDate,
+    name,
+    isValidLicence,
+    imageUrl: `/uploads/watermarked_${image.name}`
+  });
 });
 
-async function checkSIALicence(licenceNumber) {
-  // Implement the SIA licence checker logic here using axios
-  // For example:
-  try {
-    const response = await axios.get(`https://sia-checker-url.com?licence=${licenceNumber}`);
-    return response.data.isValid; // Assuming the API returns { isValid: true/false }
-  } catch (error) {
-    console.error(error);
-    return false;
-  }
+// Function to check SIA license validity
+async function checkSIALicense(licenseNumber) {
+  const response = await axios.get(`https://www.services.sia.homeoffice.gov.uk/Pages/licence-checker.aspx?licenceNumber=${licenseNumber}`);
+  const $ = cheerio.load(response.data);
+
+  const status = $('#content .status').text().trim();
+  return status === 'Active';
 }
 
-app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
+app.listen(port, () => {
+  console.log(`Server started on port ${port}`);
 });
-
