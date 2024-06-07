@@ -1,187 +1,81 @@
 const express = require('express');
-const fileUpload = require('express-fileupload');
-<<<<<<< HEAD
+const app = express();
+const axios = require('axios');
+const multer = require('multer');
 const { Storage } = require('@google-cloud/storage');
 const vision = require('@google-cloud/vision');
-const fetch = require('node-fetch');
-const Jimp = require('jimp');
 const path = require('path');
-=======
-const path = require('path');
-const { ImageAnnotatorClient } = require('@google-cloud/vision');
-const Jimp = require('jimp');
-const axios = require('axios');
-const cheerio = require('cheerio');
->>>>>>> 92da7ef238f1250068890f3f12f7a44db5fee23e
-const fs = require('fs');
-require('dotenv').config();
+const ejs = require('ejs');
+const PORT = process.env.PORT || 3000;
 
-const app = express();
-const port = process.env.PORT || 3000;
-
-<<<<<<< HEAD
-app.use(fileUpload());
-app.set('view engine', 'ejs');
-app.use(express.static('public'));
-
-// Google Cloud Vision and Storage setup
-const visionClient = new vision.ImageAnnotatorClient({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
-});
+// Google Cloud setup
+const serviceKey = path.join(__dirname, 'C:\Users\Shadow\Downloads\excellent-zoo-319912-02dc266c5423.json');
 
 const storage = new Storage({
-  keyFilename: process.env.GOOGLE_APPLICATION_CREDENTIALS
+  keyFilename: serviceKey,
+  projectId: 'excellent-zoo-319912',
 });
-const bucketName = process.env.GOOGLE_CLOUD_BUCKET_NAME;
 
-const siaCheckerUrl = 'https://www.services.sia.homeoffice.gov.uk/Pages/licence-checker.aspx';
-
-async function extractTextWithGoogleVision(filePath) {
-  try {
-    const [result] = await visionClient.textDetection(filePath);
-    return result.fullTextAnnotation.text;
-  } catch (error) {
-    console.error('Error extracting text with Google Vision:', error);
-    throw error;
-  }
-}
-
-function extractInformation(text) {
-  const licenseNumberMatch = text.match(/\b\d{4} \d{4} \d{4} \d{4}\b/);
-  const expiryDateMatch = text.match(/\b\d{2} \b[A-Z]{3}\b \d{4}/);
-  const nameMatch = text.match(/Name: (.+)/);
-
-  return {
-    licenseNumber: licenseNumberMatch ? licenseNumberMatch[0] : 'Not Found',
-    expiryDate: expiryDateMatch ? expiryDateMatch[0] : 'Not Found',
-    name: nameMatch ? nameMatch[1] : 'Not Found'
-  };
-}
-
-async function checkLicense(licenseNumber) {
-  try {
-    const response = await fetch(`${siaCheckerUrl}?licenceNumber=${licenseNumber}`);
-    const data = await response.text();
-    return data.includes('Licence is active'); // Update this according to the actual response
-  } catch (error) {
-    console.error('Error checking license:', error);
-    return false;
-  }
-}
-=======
-// Set up Google Cloud Vision client
-const visionClient = new ImageAnnotatorClient({
-  credentials: JSON.parse(Buffer.from(process.env.GOOGLE_APPLICATION_CREDENTIALS_BASE64, 'base64').toString('utf-8')),
+const client = new vision.ImageAnnotatorClient({
+  keyFilename: serviceKey,
 });
 
 // Middleware
-app.use(fileUpload());
-app.use(express.static('public'));
 app.set('view engine', 'ejs');
+app.use(express.static('public'));
 app.use(express.urlencoded({ extended: true }));
->>>>>>> 92da7ef238f1250068890f3f12f7a44db5fee23e
+
+// Multer setup for file upload
+const upload = multer({ dest: 'uploads/' });
 
 app.get('/', (req, res) => {
   res.render('upload');
 });
 
-app.post('/upload', async (req, res) => {
-<<<<<<< HEAD
-  if (!req.files || Object.keys(req.files).length === 0) {
-    return res.status(400).send('No files were uploaded.');
+app.post('/upload', upload.single('image'), async (req, res) => {
+  const file = req.file;
+  if (!file) {
+    return res.status(400).send('No file uploaded.');
   }
 
-  const uploadedFile = req.files.image;
-  const filePath = path.join(__dirname, 'uploads', uploadedFile.name);
+  const filePath = path.join(__dirname, file.path);
 
   try {
-    await uploadedFile.mv(filePath);
-    const extractedText = await extractTextWithGoogleVision(filePath);
-    const info = extractInformation(extractedText);
+    const [result] = await client.textDetection(filePath);
+    const detections = result.textAnnotations;
 
-    const isValid = await checkLicense(info.licenseNumber);
+    const licenceNumber = detections[0].description.match(/\b\d{4} \d{4} \d{4} \d{4}\b/);
+    const expiryDate = detections[0].description.match(/\b\d{2} \w{3} \d{4}\b/);
+    const name = detections[0].description.match(/[A-Z]+\. [A-Z]+/);
 
-    const image = await Jimp.read(filePath);
-    const watermark = await Jimp.read('public/watermark.png');
-    image.composite(watermark, 0, 0, {
-      mode: Jimp.BLEND_SOURCE_OVER,
-      opacitySource: 0.5
-    });
-
-    const watermarkedImagePath = path.join(__dirname, 'uploads', 'watermarked_' + uploadedFile.name);
-    await image.writeAsync(watermarkedImagePath);
+    const isValid = await checkSIALicence(licenceNumber);
 
     res.render('result', {
-      info,
+      licenceNumber: licenceNumber ? licenceNumber[0] : 'Not Found',
+      expiryDate: expiryDate ? expiryDate[0] : 'Not Found',
+      name: name ? name[0] : 'Not Found',
       isValid,
-      imagePath: '/uploads/' + uploadedFile.name,
-      watermarkedImagePath: '/uploads/watermarked_' + uploadedFile.name
+      imagePath: `uploads/${file.filename}`,
     });
   } catch (error) {
-    console.error('Error during file upload or processing:', error);
-    res.status(500).send('Internal Server Error');
+    console.error(error);
+    res.status(500).send('Error processing image.');
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running on port ${port}`);
-=======
-  if (!req.files || !req.files.image) {
-    return res.status(400).send('No files were uploaded.');
+async function checkSIALicence(licenceNumber) {
+  // Implement the SIA licence checker logic here using axios
+  // For example:
+  try {
+    const response = await axios.get(`https://sia-checker-url.com?licence=${licenceNumber}`);
+    return response.data.isValid; // Assuming the API returns { isValid: true/false }
+  } catch (error) {
+    console.error(error);
+    return false;
   }
+}
 
-  const file = req.files.image;
-  const filePath = path.join(__dirname, 'uploads', file.name);
-
-  // Save the file
-  await file.mv(filePath);
-
-  // Process the file with Google Cloud Vision
-  const [result] = await visionClient.textDetection(filePath);
-  const detections = result.textAnnotations;
-  const extractedText = detections.length > 0 ? detections[0].description : 'No text found';
-
-  // Extract License Number, Expiry Date, and Name
-  const licenseNumberRegex = /\b\d{4} \d{4} \d{4} \d{4}\b/;
-  const expiryDateRegex = /\b\d{2} \w{3} \d{4}\b/;
-  const nameRegex = /[A-Z]\. [A-Z][a-z]+/;
-
-  const licenseNumberMatch = extractedText.match(licenseNumberRegex);
-  const expiryDateMatch = extractedText.match(expiryDateRegex);
-  const nameMatch = extractedText.match(nameRegex);
-
-  const licenseNumber = licenseNumberMatch ? licenseNumberMatch[0] : 'Not Found';
-  const expiryDate = expiryDateMatch ? expiryDateMatch[0] : 'Not Found';
-  const name = nameMatch ? nameMatch[0] : 'Not Found';
-
-  // Check SIA License validity
-  let isValidLicense = false;
-  if (licenseNumber !== 'Not Found') {
-    const siaUrl = `https://www.services.sia.homeoffice.gov.uk/Pages/licence-lookup.aspx?LicenceNumber=${licenseNumber.replace(/\s/g, '')}`;
-    const siaResponse = await axios.get(siaUrl);
-    const $ = cheerio.load(siaResponse.data);
-    isValidLicense = $('#ctl00_PlaceHolderMain_PageContent_licenceDetails_status').text().trim() === 'Active';
-  }
-
-  // Add watermark
-  const watermarkText = 'Virtulum Checks';
-  const image = await Jimp.read(filePath);
-  const font = await Jimp.loadFont(Jimp.FONT_SANS_32_WHITE);
-  image.print(font, 10, 10, watermarkText);
-  const watermarkedFilePath = path.join(__dirname, 'uploads', 'watermarked_' + file.name);
-  await image.writeAsync(watermarkedFilePath);
-
-  // Render result
-  res.render('result', {
-    licenseNumber,
-    expiryDate,
-    name,
-    isValidLicense,
-    imagePath: '/uploads/watermarked_' + file.name
-  });
+app.listen(PORT, () => {
+  console.log(`Server started on port ${PORT}`);
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
->>>>>>> 92da7ef238f1250068890f3f12f7a44db5fee23e
-});
