@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>License Check Result</title>
+</head>
+<body>
+    <h1>License Check Result</h1>
+    <p><strong>License Number:</strong> <%= licenseNumber %></p>
+    <p><strong>Expiry Date:</strong> <%= expiryDate %></p>
+    <p><strong>Name:</strong> <%= name %></p>
+    <p><strong>License Validity:</strong> <%= isValidLicense ? 'Valid' : 'Invalid' %></p>
+    <img src="<%= imagePath %>" alt="Uploaded Image">
+</body>
+</html>
