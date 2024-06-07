@@ -1,0 +1,23 @@
+{
+    "name": "sia-licence-checker",
+    "version": "1.0.0",
+    "description": "SIA Licence Checker",
+    "main": "app.js",
+    "scripts": {
+      "start": "node app.js"
+    },
+    "dependencies": {
+      "@google-cloud/storage": "^5.15.1",
+      "@google-cloud/vision": "^2.4.0",
+      "dotenv": "^10.0.0",
+      "ejs": "^3.1.6",
+      "express": "^4.17.1",
+      "express-fileupload": "^1.2.1",
+      "jimp": "^0.16.1",
+      "node-fetch": "^2.6.1"
+    },
+    "engines": {
+      "node": ">=14.0.0"
+    }
+  }
+  

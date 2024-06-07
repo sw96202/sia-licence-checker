@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Upload SIA Licence</title>
+</head>
+<body>
+  <h1>Upload SIA Licence</h1>
+  <form ref='uploadForm' 
+        id='uploadForm' 
+        action='/upload' 
+        method='post' 
+        encType="multipart/form-data">
+      <input type="file" name="image" accept="image/*" capture="camera"/>
+      <input type='submit' value='Upload!' />
+  </form>
+</body>
+</html>
