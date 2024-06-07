@@ -1,4 +1,5 @@
 {
+<<<<<<< HEAD
     "name": "sia-licence-checker",
     "version": "1.0.0",
     "description": "SIA Licence Checker",
@@ -21,3 +22,24 @@
     }
   }
   
+=======
+  "name": "sia-licence-checker",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js"
+  },
+  "dependencies": {
+    "axios": "^0.21.1",
+    "body-parser": "^1.19.0",
+    "cheerio": "^1.0.0-rc.5",
+    "dotenv": "^8.2.0",
+    "express": "^4.17.1",
+    "express-fileupload": "^1.2.0",
+    "jimp": "^0.16.1",
+    "puppeteer": "^10.0.0",
+    "@google-cloud/vision": "^2.4.0"
+  }
+}
+>>>>>>> 92da7ef238f1250068890f3f12f7a44db5fee23e
