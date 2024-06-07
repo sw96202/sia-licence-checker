@@ -4,7 +4,6 @@ const vision = require('@google-cloud/vision');
 const path = require('path');
 const axios = require('axios');
 const sharp = require('sharp');
-const { Storage } = require('@google-cloud/storage');
 const fs = require('fs');
 const cheerio = require('cheerio');
 
@@ -13,14 +12,15 @@ require('dotenv').config();
 const app = express();
 const port = process.env.PORT || 10000;
 
+// Ensure uploads directory exists
+if (!fs.existsSync(path.join(__dirname, 'uploads'))) {
+  fs.mkdirSync(path.join(__dirname, 'uploads'));
+}
+
 // Google Cloud setup
-const serviceKey = path.join(__dirname, 'excellent-zoo-319912-02dc266c5423.json');
+const serviceKey = path.join(__dirname, process.env.GOOGLE_APPLICATION_CREDENTIALS);
 
 const client = new vision.ImageAnnotatorClient({
-  keyFilename: serviceKey,
-});
-
-const storage = new Storage({
   keyFilename: serviceKey,
 });
 
@@ -40,7 +40,11 @@ app.post('/', async (req, res) => {
   const image = req.files.image;
   const imagePath = path.join(__dirname, 'uploads', image.name);
 
-  await image.mv(imagePath);
+  try {
+    await image.mv(imagePath);
+  } catch (err) {
+    return res.status(500).send('Error saving the file.');
+  }
 
   const [result] = await client.textDetection(imagePath);
   const detections = result.textAnnotations;
@@ -65,10 +69,13 @@ app.post('/', async (req, res) => {
     name = nameMatch[0];
   }
 
+  // Remove spaces from the license number for SIA check
+  const formattedLicenseNumber = licenseNumber.replace(/\s+/g, '');
+
   // Scrape SIA website for license validation
   let isValidLicence = false;
   try {
-    const siaResponse = await checkSIALicense(licenseNumber);
+    const siaResponse = await checkSIALicense(formattedLicenseNumber);
     if (siaResponse) {
       isValidLicence = true;
     }
@@ -78,9 +85,13 @@ app.post('/', async (req, res) => {
 
   // Add watermark to the image
   const watermarkedImagePath = path.join(__dirname, 'uploads', `watermarked_${image.name}`);
-  await sharp(imagePath)
-    .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
-    .toFile(watermarkedImagePath);
+  try {
+    await sharp(imagePath)
+      .composite([{ input: Buffer.from('<svg><text x="10" y="50" font-size="30" fill="white">Virtulum Checks</text></svg>'), gravity: 'southeast' }])
+      .toFile(watermarkedImagePath);
+  } catch (err) {
+    return res.status(500).send('Error adding watermark to the image.');
+  }
 
   res.render('result', {
     licenseNumber,
