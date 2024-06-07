@@ -9,7 +9,7 @@ const ejs = require('ejs');
 const PORT = process.env.PORT || 3000;
 
 // Google Cloud setup
-const serviceKey = path.join(__dirname, 'C:\Users\Shadow\Downloads\excellent-zoo-319912-02dc266c5423.json');
+const serviceKey = path.join(__dirname, 'excellent-zoo-319912-02dc266c5423.json');
 
 const storage = new Storage({
   keyFilename: serviceKey,
