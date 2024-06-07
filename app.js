@@ -14,7 +14,7 @@ const app = express();
 const port = process.env.PORT || 10000;
 
 // Google Cloud setup
-const serviceKey = path.join(__dirname, 'service-account-file.json');
+const serviceKey = path.join(__dirname, 'excellent-zoo-319912-02dc266c5423.json');
 
 const client = new vision.ImageAnnotatorClient({
   keyFilename: serviceKey,
