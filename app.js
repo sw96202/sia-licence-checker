@@ -19,7 +19,7 @@ app.use(express.static('public'));
 app.set('view engine', 'ejs');
 
 // Google Cloud setup
-const serviceKey = path.join(__dirname, 'service-account-file.json');
+const serviceKey = process.env.GOOGLE_APPLICATION_CREDENTIALS;
 const client = new vision.ImageAnnotatorClient({ keyFilename: serviceKey });
 const storage = new Storage({ keyFilename: serviceKey });
 
@@ -91,8 +91,10 @@ app.post('/upload', async (req, res) => {
 
     // Extract text using Google Vision API
     const extractedText = await extractTextWithGoogleVision(filePath);
-    const licenseNumber = extractedText.match(/\d{16}/g)?.[0];
-    const expiryDate = extractedText.match(/(EXPIRES\s+\d{2}\s+\w+\s+\d{4})/i)?.[1];
+    const licenseNumberMatch = extractedText.match(/\d{4}\s\d{4}\s\d{4}\s\d{4}/);
+    const licenseNumber = licenseNumberMatch ? licenseNumberMatch[0].replace(/\s+/g, '') : null;
+    const expiryDateMatch = extractedText.match(/EXPIRES\s+\d{2}\s+\w+\s+\d{4}/i);
+    const expiryDate = expiryDateMatch ? expiryDateMatch[0].replace('EXPIRES ', '') : 'Not Found';
     
     // Check the license validity and get the name from the SIA site
     let siaResponse;
@@ -100,7 +102,7 @@ app.post('/upload', async (req, res) => {
     let isValidLicence;
 
     if (licenseNumber) {
-        siaResponse = await scrapeSIALicenses(licenseNumber.replace(/\s+/g, ''));
+        siaResponse = await scrapeSIALicenses(licenseNumber);
         isValidLicence = siaResponse.valid;
         name = siaResponse.valid ? siaResponse.fullName : 'Not Found';
     } else {
